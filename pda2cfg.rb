@@ -1,3 +1,5 @@
+# Arthur Tofani - 3339712
+
 require 'pry'
 
 class Pda2Cfg
@@ -55,16 +57,30 @@ class Pda2Cfg
 
   def cfg_latex
     g = cfg
-    g.keys.map do |key|
-      str = "#{varstr(key)} \\rightarrow " + @rules[key].map{|r| r.map{|s| varstr(s)}.join("") }.join(" ~|~ ")
-      str.gsub("e", "\\epsilon")
-      "$#{str}$\\\\"
+    
+    # mark initial variable and set rule as first one
+    initial_state = [@q_init, @q_accept]
+    str = rule_string(g.keys.select{|s| s==initial_state}.first)
+    
+    # draw other rules
+    g.keys.reject{|k| k==initial_state}.each do |key|
+      str += rule_string(key)
     end    
+    
+    str
+  end
+
+  def rule_string(key)
+      str = "#{varstr(key)} \\rightarrow " + @rules[key].map{|r| r.map{|s| varstr(s)}.join("")}.join(" ~|~ ").gsub("e", "\\epsilon")
+      "$#{str}$\\\\\n"
   end
 
   def varstr(var)    
-    return "A_{#{var.first.to_s.tr('q', '')},#{var.last.to_s.tr('q', '')}}" if var.class==Array
-    var.to_s
+    if var.class==Array
+      "A_{#{var.first.to_s.tr('q', '')},#{var.last.to_s.tr('q', '')}}"
+    else
+      return var.to_s
+    end          
   end
 
 end
@@ -74,7 +90,7 @@ end
 
 
 states = [:q1, :q2, :q3, :q4, :q5, :q6]
-pda2cfg = Pda2Cfg.new(states, ["0", "1", :e], ["0", "1", "$", "@"], :q1, :q3)
+pda2cfg = Pda2Cfg.new(states, ["0", "1", :e], ["0", "1", "$", "@"], :q1, :q4)
 
 pda2cfg.add_transition(:q1, :e, :e){[:q2, "$"]}
 pda2cfg.add_transition(:q2, "1", :e){[:q2, "1"]}
