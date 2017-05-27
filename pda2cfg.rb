@@ -16,7 +16,9 @@ class Pda2Cfg
   end
 
   def add_transition(initial_state, from_tape, from_stack)
-    @transitions[[initial_state, from_tape, from_stack]] = yield
+    @transitions[[initial_state, from_tape, from_stack]] ||= []
+    @transitions[[initial_state, from_tape, from_stack]].push( yield )
+    yield
   end
 
   def cfg
@@ -27,11 +29,15 @@ class Pda2Cfg
             @stack_alphabet.each do |t| # TODO: remove ε
               @stack_alphabet.each do |a|
                 @stack_alphabet.each do |b|
-                  
-                  tpl1, tpl2 = [p, a, :e], [s, b, t]                  
-                  if @transitions[tpl1]==[r, t] && @transitions[tpl2]==[q, :e]
-                    add_rule([p, q], [a, [r, s], b])
-                  end                
+                  tr1 = (@transitions[[p, a, :e]] || [])
+                  tr2 = (@transitions[[s, b, t]] || [])
+                  tr1.each do |tpl1|
+                    tr2.each do |tpl2|
+                      if tpl1==[r, t] && tpl2==[q, :e]
+                        add_rule([p, q], [a, [r, s], b])
+                      end                                    
+                    end
+                  end
 
                 end
               end
@@ -70,6 +76,64 @@ class Pda2Cfg
     str
   end
 
+  def cfg_obj
+    g = cfg
+    initial_state = [@q_init, @q_accept]
+    str = cfg_rule(g.keys.select{|s| s==initial_state}.first)
+    
+    # draw other rules
+    g.keys.reject{|k| k==initial_state}.each do |key|
+      str += cfg_rule(key)
+    end    
+    
+    str
+  end
+
+
+  def compute(str)
+    compute_rec(@q_init, str, 0, [], cfg)
+  end
+
+  def compute_rec(q, tape, idx, stack, g, path=nil)
+    return path if stack.count==0 && q==@q_accept
+    
+    @x ||= nil
+    path ||= q.to_s    
+    symb = tape[idx]
+    stack_head = stack.last
+    
+    transitions_keys = @transitions.keys.select{|s| s[0]==q && [:e, symb].include?(s[1]) && [:e, stack_head].include?(s[2])}
+    transitions_keys.each do |t_key|      
+      @transitions[t_key].each do |transition|
+        new_q = transition[0]
+        stack_element = transition[1]
+        stk = stack.clone
+        if stack_element==:e
+          stk.pop()
+        else
+          stk.push(stack_element)
+        end
+        res = compute_rec(new_q, tape, (t_key[1]==:e ? idx : (idx + 1)), stk, g, "#{path}_#{new_q.to_s}")  
+        return res unless res.nil?
+      end
+    end
+    return nil
+  end
+
+  def derive_fron_grammar(str)
+    rules = cfg_obj
+    derive_rec()
+  end
+
+  def derive_rec()
+  end
+
+  def cfg_rule(key)
+      binding.pry
+      str = "#{varstr(key)} \\rightarrow " + @rules[key].map{|r| r.map{|s| varstr(s)}.join("")}.join(" ~|~ ").gsub("e", "\\epsilon")
+      "$#{str}$\\\\\n"
+  end
+
   def rule_string(key)
       str = "#{varstr(key)} \\rightarrow " + @rules[key].map{|r| r.map{|s| varstr(s)}.join("")}.join(" ~|~ ").gsub("e", "\\epsilon")
       "$#{str}$\\\\\n"
@@ -80,7 +144,7 @@ class Pda2Cfg
       "A_{#{var.first.to_s.tr('q', '')},#{var.last.to_s.tr('q', '')}}"
     else
       return var.to_s
-    end          
+    end
   end
 
 end
@@ -105,6 +169,11 @@ pda2cfg.add_transition(:q3, :e, "$"){[:q4, :e]}
 pda2cfg.add_transition(:q1, :e, :e){[:q6, "$"]}
 pda2cfg.add_transition(:q6, :e, "$"){[:q4, :e]}
 
-puts pda2cfg.cfg_latex
+puts pda2cfg.compute("0110110110")
+puts pda2cfg.compute("derive_fron_grammar")
+
+#puts pda2cfg.cfg_latex
 
 
+
+# binding.pry if (stack == ["$", "0", "1", "1", "0", "1"])
