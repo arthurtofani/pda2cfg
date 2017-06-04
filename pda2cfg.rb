@@ -13,6 +13,7 @@ class Pda2Cfg
     @q_init = q_init
     @q_accept = q_accept
     @rules = {}
+    @valid_rules = []
   end
 
   def add_transition(initial_state, from_tape, from_stack)
@@ -22,6 +23,10 @@ class Pda2Cfg
   end
 
   def cfg
+    @cfg ||= create_cfg
+  end
+
+  def create_cfg
     @states.each do |p|
       @states.each do |q|
         @states.each do |r|          
@@ -61,33 +66,22 @@ class Pda2Cfg
     @rules[var].push(statement)
   end
 
-  def cfg_latex
-    g = cfg
-    
-    # mark initial variable and set rule as first one
-    initial_state = [@q_init, @q_accept]
-    str = rule_string(g.keys.select{|s| s==initial_state}.first)
-    
-    # draw other rules
-    g.keys.reject{|k| k==initial_state}.each do |key|
-      str += rule_string(key)
-    end    
-    
-    str
-  end
-
 
 
 
   def compute(str)
-    compute_rec(@q_init, str, 0, [], cfg)
+    a = compute_rec(@q_init, str, 0, [], cfg)
+    a.map{|s| draw_result(s)}.join("\n")
   end
 
-  def compute_rec(q, tape, idx, stack, g, path=nil)
+  def draw_result(arr)
+    "$\\delta(q_{#{arr[0][1]}}, #{arr[1] || '\\epsilon'}, #{arr[2] || 'vazia'}) = (q_{#{arr[3][1]}}, #{arr[4].to_s.gsub("e", "\\epsilon")})$\\\\"
+  end
+
+  def compute_rec(q, tape, idx, stack, g, path=[])
     return path if stack.count==0 && q==@q_accept
     
     @x ||= nil
-    path ||= q.to_s    
     symb = tape[idx]
     stack_head = stack.last
     
@@ -102,22 +96,116 @@ class Pda2Cfg
         else
           stk.push(stack_element)
         end
-        res = compute_rec(new_q, tape, (t_key[1]==:e ? idx : (idx + 1)), stk, g, "#{path}_#{new_q.to_s}")  
+        pp = path.clone.push([q, symb, stack_head, new_q, stack_element])
+        res = compute_rec(new_q, tape, (t_key[1]==:e ? idx : (idx + 1)), stk, g, pp)
         return res unless res.nil?
       end
     end
     return nil
   end
 
+  def check_valid_rules()
+    @valid_rules = []
+    g = cfg
+    
+    same_length = -1
+    past = 0
+    
+    while same_length!=past
+      g.each do |rule|      
+        rule.last.each do |symbol|
+          symbol.each do |var_or_terminal|
+            if ["0", "1", :e].include?(var_or_terminal)
+              @valid_rules.push(rule.first).uniq!
+            end
+          end
+        end      
+      end
+      past = same_length
+      same_length = @valid_rules.count
+    end    
 
-
-
-  def rule_string(key)
-      str = "#{varstr(key)} \\rightarrow " + @rules[key].map{|r| r.map{|s| varstr(s)}.join("")}.join(" ~|~ ").gsub("e", "\\epsilon ")
-      "$#{str}$\\\\\n"
   end
 
-  def varstr(var)    
+  def cfg_latex(g)
+    #check_valid_rules if mark_valid_rules!=0
+    
+    # mark initial variable and set rule as first one
+    initial_state = [@q_init, @q_accept]
+    k = g.keys.select{|s| s==initial_state}.first
+    str = rule_string(k, g[k])
+    
+    # draw other rules
+    g.keys.reject{|k| k==initial_state}.each do |key|
+      str += rule_string(key, g[key])
+    end    
+    
+    str
+  end
+
+  def valid_rules_set
+    g = cfg.clone
+    check_valid_rules
+    
+    g.keys.each do |g_key|
+      if @valid_rules.include? g_key
+      else
+        g.delete(g_key)
+      end
+    end
+
+    g.keys.each do |g_key|
+      if @valid_rules.include? g_key
+        g[g_key].map! do |stmt|
+          puts "- - #{stmt} - "
+          if (stmt - [:e]).map{|s| @valid_rules.include? s}.all? || stmt.map{|s| [:e, "0", "1"].include? s}.all?
+            stmt
+          else
+            nil
+          end
+        end.compact!
+      end
+    end    
+    g
+  end
+
+  def invalid_rules_set
+    g = cfg.clone
+    check_valid_rules
+    # g.keys.each do |g_key|
+    #   if @valid_rules.include? g_key
+    #   else
+    #     g.delete(g_key)
+    #   end
+    # end
+
+    g.keys.each do |g_key|
+      if @valid_rules.include? g_key
+        g[g_key].map! do |stmt|
+          puts "- - #{stmt} - "
+          if (stmt - [:e]).map{|s| @valid_rules.include? s}.all? || stmt.map{|s| [:e, "0", "1"].include? s}.all?
+            nil
+          else
+            stmt
+          end
+        end.compact!
+      end
+    end    
+    g
+  end
+
+  def rule_string(key, arr_terms)  
+    terms = arr_terms.map do |r|
+      r.map{|s| varstr(s)}.join("")
+    end
+    terms = terms.select{|s| s!= ""}.join(" ~|~ ")
+    terms = terms.gsub("eA", "A").gsub("}e", "}")
+    terms = terms.gsub("e", "\\epsilon ")
+    
+    return "$#{varstr(key)} \\rightarrow #{terms}$\\\\\n"
+  end
+
+  def varstr(var)
     if var.class==Array
       "A_{#{var.first.to_s.tr('q', '')}#{var.last.to_s.tr('q', '')}}"
     else
@@ -147,6 +235,12 @@ pda2cfg.add_transition(:q3, :e, "$"){[:q4, :e]}
 pda2cfg.add_transition(:q1, :e, :e){[:q6, "$"]}
 pda2cfg.add_transition(:q6, :e, "$"){[:q4, :e]}
 
-puts pda2cfg.cfg_latex
+
+
+
+
+#puts pda2cfg.cfg_latex(pda2cfg.cfg)
+puts "***********************"
+puts pda2cfg.cfg_latex(pda2cfg.invalid_rules_set)
 puts ""
-puts pda2cfg.compute("0110110110")
+#puts pda2cfg.compute("0110110110")
